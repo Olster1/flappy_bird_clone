@@ -23,6 +23,10 @@ inline float ATan2_0toTau(float Y, float X) {
     return Result;
 }
 
+static float lerp(float a, float b, float t) {
+	return (b - a)*t + a;
+}
+
 
 struct float2
 {
@@ -289,6 +293,16 @@ static float16 float16_indentity() {
 	result.E_[0][0] = 1;
 	result.E_[1][1] = 1;
 	result.E_[2][2] = 1;
+	result.E_[3][3] = 1;
+
+	return result;
+}
+
+static float16 float16_set_pos(float16 result, float3 pos) {
+
+	result.E_[3][0] = pos.x;
+	result.E_[3][1] = pos.y;
+	result.E_[3][2] = pos.z;
 	result.E_[3][3] = 1;
 
 	return result;

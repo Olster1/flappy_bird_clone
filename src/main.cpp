@@ -34,15 +34,12 @@ inline char *easy_createString_printf(Memory_Arena *arena, char *formatString, .
     return strArray;
 }
 
-/*
-Next:
-
-
-*/
-
 struct Player {
 	float3 pos;
 	float2 velocity;
+
+	float targetRotation;
+	float rotation;
 
 	float3 cameraPos;
 
@@ -82,6 +79,8 @@ typedef struct {
 	Texture playerTexture;
 
 	Texture pipeTexture;
+
+	Texture pipeFlippedTexture;
 
 	Texture backgroundTexture;
 
@@ -192,6 +191,7 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		editorState->playerTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\helicopter.png");
 
 		editorState->pipeTexture =  backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\pipe.png");
+		editorState->pipeFlippedTexture =  backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\pipeRotated.png");
 
 		editorState->backgroundTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\backgroundCastles.png");
 
@@ -243,21 +243,21 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 	pushShader(renderer, &rectOutlineShader);
 
-
-	if(global_platformInput.keyStates[PLATFORM_KEY_UP].isDown) {
-		editorState->player.pos.y += 0.1f;
-		editorState->player.velocity.y = 0;
+	float rotationPower = 1;
+	if(global_platformInput.keyStates[PLATFORM_KEY_UP].pressedCount > 0) {
+		// editorState->player.pos.y += 1.0f;
+		editorState->player.velocity.y = 5.0f;
+		editorState->player.targetRotation = 0.5f*HALF_PI32;
+		rotationPower = 15.0f;
 
 	} else {
-		editorState->player.velocity.y -= 0.1f;
+		editorState->player.velocity.y -= 0.3f;
+		editorState->player.targetRotation = -0.5f*HALF_PI32;
 	}
 
-	
-	// if(global_platformInput.keyStates[PLATFORM_KEY_DOWN].isDown) {
-		
-	// }
-
 	editorState->player.pos.xy = plus_float2(scale_float2(dt, editorState->player.velocity),  editorState->player.pos.xy);
+
+	editorState->player.rotation = lerp(editorState->player.rotation, editorState->player.targetRotation, rotationPower*0.05f); 
 
 	editorState->player.cameraPos.x = editorState->player.pos.x;
 
@@ -267,6 +267,7 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 	pushTexture(renderer, editorState->backgroundTexture.handle, make_float3(0, 0, 10), make_float2(fauxDimensionX, fauxDimensionY), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
 
 	float16 fovMatrix = make_perspective_matrix_origin_center(60.0f, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE, windowWidth / windowHeight);
+
 	pushMatrix(renderer, fovMatrix);
 
 	
@@ -276,7 +277,6 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 		float yPos = 3.5f*perlin1d(i,  10, 10);
 
-
 		Rect2f r = make_rect2f_center_dim(make_float2(i*2, yPos + 1.5f), make_float2(1, 2));
 
 		float3 pos = {};
@@ -285,7 +285,7 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 		//pushRect(renderer, minus_float3(pos, editorState->player.cameraPos), get_scale_rect2f(r), make_float4(1, 0, 0, 1));
 		
-		pushTexture(renderer, editorState->pipeTexture.handle, minus_float3(pos, editorState->player.cameraPos), get_scale_rect2f(r), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
+		pushTexture(renderer, editorState->pipeFlippedTexture.handle, minus_float3(pos, editorState->player.cameraPos), get_scale_rect2f(r), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
 		
 
 		Rect2f minowskiPlus = rect2f_minowski_plus(r, make_rect2f_center_dim(editorState->player.pos.xy, playerSize), pos.xy);
@@ -304,9 +304,11 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		pos.xy = get_centre_rect2f(r);
 		pos.z = 9;
 
+		float3 pipePos = minus_float3(pos, editorState->player.cameraPos);
+
 		//pushRect(renderer, minus_float3(pos, editorState->player.cameraPos), get_scale_rect2f(r), make_float4(1, 0, 0, 1));
 
-		pushTexture(renderer, editorState->pipeTexture.handle, minus_float3(pos, editorState->player.cameraPos), get_scale_rect2f(r), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
+		pushTexture(renderer, editorState->pipeTexture.handle, pipePos, get_scale_rect2f(r), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
 
 		minowskiPlus = rect2f_minowski_plus(r, make_rect2f_center_dim(editorState->player.pos.xy, playerSize), pos.xy);
 		if(in_rect2f_bounds(minowskiPlus, editorState->player.pos.xy)) {
@@ -317,21 +319,19 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 	}
 
 	//NOTE: Draw player
-		u64 start = __rdtsc();
-		float16_multiply_SIMD(fovMatrix, float16_indentity());
-		u64 end = __rdtsc();
-		u64 resulta = end - start;
+	float16 playerMatrix = float16_angle_aroundZ(editorState->player.rotation);
 
-		start = __rdtsc();
-		float16 playerMatrix = float16_multiply(fovMatrix, float16_angle_aroundZ(0.5f*HALF_PI32));
-		end = __rdtsc();
-		u64 resultb = end - start;
+	float3 playerP = minus_float3(editorState->player.pos, editorState->player.cameraPos);
 
-		pushMatrix(renderer, playerMatrix);
+	playerMatrix = float16_set_pos(playerMatrix, playerP);
+
+	playerMatrix = float16_multiply(fovMatrix, playerMatrix); 
+
+	pushMatrix(renderer, playerMatrix);
 
 	Texture *t = easyAnimation_updateAnimation_getTexture(&editorState->playerAnimationController, &editorState->animationItemFreeListPtr, dt);
 	
-	pushTexture(renderer, t->handle, minus_float3(editorState->player.pos, editorState->player.cameraPos), playerSize, make_float4(1, 1, 1, 1), t->uvCoords);
+	pushTexture(renderer, t->handle, make_float3(0, 0, 0), playerSize, make_float4(1, 1, 1, 1), t->uvCoords);
 
 
 
