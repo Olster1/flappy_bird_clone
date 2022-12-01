@@ -2,12 +2,7 @@
 #include "file_helper.cpp"
 #include "lex_utf8.h"
 #include "color.cpp"
-#include "selectable.cpp"
-#include "wl_buffer.cpp"
-#include "wl_ast.cpp"
 #include "font.cpp"
-#include "ui.cpp"
-#include "save_settings.cpp"
 #include "perlin.c"
 #define EASY_ANIMATION_2D_IMPLEMENTATION 1
 #include "animation.c"
