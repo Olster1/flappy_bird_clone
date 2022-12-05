@@ -319,6 +319,17 @@ float16 float16_angle_aroundZ(float angle_radians) {
 }
 
 
+float16 float16_angle_aroundY(float angle_radians) {
+    float16 result = {{
+            (float)cos(angle_radians), 0, (float)sin(angle_radians), 0,
+			0, 1, 0, 0,
+            (float)cos(angle_radians + HALF_PI32), 0, (float)sin(angle_radians + HALF_PI32), 0,
+            0, 0, 0, 1
+        }};
+    return result;
+}
+
+
 // https://codereview.stackexchange.com/questions/101144/simd-matrix-multiplication
 
 //NOTE: This is actually slower, we are still doing 16 loops whereas we should only have to do 4 

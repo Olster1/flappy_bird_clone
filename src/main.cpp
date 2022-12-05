@@ -1,4 +1,5 @@
 #include "wl_memory.h"
+#include "save_settings.cpp"
 #include "file_helper.cpp"
 #include "lex_utf8.h"
 #include "color.cpp"
@@ -79,7 +80,13 @@ typedef struct {
 
 	Texture backgroundTexture;
 
+	Texture coinTexture;
+
+	float coinRotation; //NOTE: Between 0 and 1
+
 	int points;
+
+	bool coinsGot[128];
 
 	CollisionRect rects[128];
 
@@ -190,6 +197,8 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 		editorState->backgroundTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\backgroundCastles.png");
 
+		editorState->coinTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\coin.png");
+
 		for(int i = 0; i < arrayCount(editorState->rects); ++i) {
 			Rect2f r = make_rect2f_center_dim(make_float2(i, 3), make_float2(1, 2));
 			editorState->rects[i] = CollisionRect(r);
@@ -261,18 +270,27 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 	//NOTE: Background texture
 	pushTexture(renderer, editorState->backgroundTexture.handle, make_float3(0, 0, 10), make_float2(fauxDimensionX, fauxDimensionY), make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
 
-	float16 fovMatrix = make_perspective_matrix_origin_center(60.0f, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE, windowWidth / windowHeight);
+	float planeSize = 10.0f;
+	float16 fovMatrix = make_ortho_matrix_origin_center((windowWidth / windowHeight)*planeSize, planeSize, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE);
+	// float16 fovMatrix = make_perspective_matrix_origin_center(60.0f, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE, windowWidth / windowHeight);
 
-	pushMatrix(renderer, fovMatrix);
+	editorState->coinRotation += dt*0.6f;
 
+	if(editorState->coinRotation > 1.0f) {
+		editorState->coinRotation = 0;
+	}
 	
 	float2 playerSize = make_float2(1, 1);
 
+	float gapSize = 2.5f;
+
 	for(int i = 0; i < 128; ++i) {
+
+		pushMatrix(renderer, fovMatrix);
 
 		float yPos = 3.5f*perlin1d(i,  10, 10);
 
-		Rect2f r = make_rect2f_center_dim(make_float2(i*2, yPos + 1.5f), make_float2(1, 2));
+		Rect2f r = make_rect2f_center_dim(make_float2(i*2, yPos + gapSize), make_float2(1, 2));
 
 		float3 pos = {};
 		pos.xy = get_centre_rect2f(r);
@@ -293,7 +311,7 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		////////////
 		/// This is the ones below
 		/// 
-		r = make_rect2f_center_dim(make_float2(i*2, yPos - 2.8), make_float2(1, 2));
+		r = make_rect2f_center_dim(make_float2(i*2, yPos - gapSize), make_float2(1, 2));
 
 		pos = {};
 		pos.xy = get_centre_rect2f(r);
@@ -311,6 +329,41 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 			// editorState->player.velocity.y = 0;
 			//NOTE: Reset player
 		}
+
+		if(!editorState->coinsGot[i]) {
+
+			//NOTE: Draw and update coins
+			float3 coinPos = {};
+			coinPos.xy = make_float2(i*2, yPos);
+			coinPos.z = 10;
+
+			//NOTE: MOve from model to view space
+			float3 coinPosViewSpace = minus_float3(coinPos, editorState->player.cameraPos);
+
+			float16 coinMatrix = float16_angle_aroundY(lerp(0, 2*PI32, editorState->coinRotation));
+
+			coinMatrix = float16_set_pos(coinMatrix, coinPosViewSpace);
+
+			coinMatrix = float16_multiply(fovMatrix, coinMatrix); 
+
+			pushMatrix(renderer, coinMatrix);
+
+			float2 coinSize = make_float2(1, 1);
+
+			pushTexture(renderer, editorState->coinTexture.handle, make_float3(0, 0, 0), coinSize, make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
+			
+			//NOTE: Player collision
+
+			r = make_rect2f_center_dim(coinPos.xy, scale_float2(0.7f, coinSize));
+
+			minowskiPlus = rect2f_minowski_plus(r, make_rect2f_center_dim(editorState->player.pos.xy, playerSize), coinPos.xy);
+			if(in_rect2f_bounds(minowskiPlus, editorState->player.pos.xy)) {
+				editorState->points += 10;
+				//NOTE: Make coin dissapear
+				editorState->coinsGot[i] = true;
+			}
+		}
+
 	}
 
 	//NOTE: Draw player
