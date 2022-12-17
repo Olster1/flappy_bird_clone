@@ -7,6 +7,7 @@
 #include "perlin.c"
 #define EASY_ANIMATION_2D_IMPLEMENTATION 1
 #include "animation.c"
+#include "resize_array.cpp"
 
 
 #include <time.h>
@@ -57,6 +58,8 @@ struct CollisionRect {
 	}
 };
 
+
+
 typedef struct {
 	bool initialized;
 
@@ -86,9 +89,10 @@ typedef struct {
 
 	int points;
 
-	bool coinsGot[128];
+	bool hasInteratedYet;
 
-	CollisionRect rects[128];
+	//NOTE: Resizeable array for the coins - if id in list, means user got it. 
+	int *coinsGot;
 
 	EasyAnimation_Controller playerAnimationController;
 	Animation playerIdleAnimation;
@@ -185,10 +189,11 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		editorState->fontScale = 0.6f;
 
 		editorState->draw_debug_memory_stats = false;
+		editorState->hasInteratedYet = false;
 
 		srand(time(NULL));   // Initialization, should only be called once.
 		
-		editorState->player.velocity = make_float2(2, 0);
+		editorState->player.velocity = make_float2(0, 0);
 		editorState->player.pos = make_float3(0, 0, 10);
 		editorState->playerTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\helicopter.png");
 
@@ -199,10 +204,10 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 		editorState->coinTexture = backendRenderer_loadFromFileToGPU(backendRenderer, "..\\src\\images\\coin.png");
 
-		for(int i = 0; i < arrayCount(editorState->rects); ++i) {
-			Rect2f r = make_rect2f_center_dim(make_float2(i, 3), make_float2(1, 2));
-			editorState->rects[i] = CollisionRect(r);
-		}
+		// for(int i = 0; i < arrayCount(editorState->rects); ++i) {
+		// 	Rect2f r = make_rect2f_center_dim(make_float2(i, 3), make_float2(1, 2));
+		// 	editorState->rects[i] = CollisionRect(r);
+		// }
 
 		easyAnimation_initController(&editorState->playerAnimationController);
 		easyAnimation_initAnimation(&editorState->playerIdleAnimation, "flappy_bird_idle");
@@ -211,6 +216,8 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		
 
 		loadImageStrip(&editorState->playerIdleAnimation, backendRenderer, "..\\src\\images\\Flappy_bird.png", 64);
+
+		editorState->coinsGot = initResizeArray(int);
 
 	} else {
 		releaseMemoryMark(&global_perFrameArenaMark);
@@ -254,7 +261,13 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		editorState->player.targetRotation = 0.5f*HALF_PI32;
 		rotationPower = 15.0f;
 
-	} else {
+		if(!editorState->hasInteratedYet) {
+			editorState->player.velocity.x = 2;
+		}
+
+		editorState->hasInteratedYet = true;
+
+	} else if(editorState->hasInteratedYet) {
 		editorState->player.velocity.y -= 0.3f;
 		editorState->player.targetRotation = -0.5f*HALF_PI32;
 	}
@@ -288,7 +301,7 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 		pushMatrix(renderer, fovMatrix);
 
-		float yPos = 3.5f*perlin1d(i,  10, 10);
+		float yPos = 3.5f*perlin1d(i + 1,  10, 10);
 
 		Rect2f r = make_rect2f_center_dim(make_float2(i*2, yPos + gapSize), make_float2(1, 2));
 
@@ -330,37 +343,49 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 			//NOTE: Reset player
 		}
 
-		if(!editorState->coinsGot[i]) {
+		{
+			bool gotCoin = false;
 
-			//NOTE: Draw and update coins
-			float3 coinPos = {};
-			coinPos.xy = make_float2(i*2, yPos);
-			coinPos.z = 10;
+			for(int j = 0; j < getArrayLength(editorState->coinsGot); j++) {
+				if(editorState->coinsGot[j] == i) {
+					gotCoin = true;
+					break;
+				}
+			}
 
-			//NOTE: MOve from model to view space
-			float3 coinPosViewSpace = minus_float3(coinPos, editorState->player.cameraPos);
+			if(!gotCoin) {
 
-			float16 coinMatrix = float16_angle_aroundY(lerp(0, 2*PI32, editorState->coinRotation));
+				//NOTE: Draw and update coins
+				float3 coinPos = {};
+				coinPos.xy = make_float2(i*2, yPos);
+				coinPos.z = 10;
 
-			coinMatrix = float16_set_pos(coinMatrix, coinPosViewSpace);
+				//NOTE: MOve from model to view space
+				float3 coinPosViewSpace = minus_float3(coinPos, editorState->player.cameraPos);
 
-			coinMatrix = float16_multiply(fovMatrix, coinMatrix); 
+				float16 coinMatrix = float16_angle_aroundY(lerp(0, 2*PI32, editorState->coinRotation));
 
-			pushMatrix(renderer, coinMatrix);
+				coinMatrix = float16_set_pos(coinMatrix, coinPosViewSpace);
 
-			float2 coinSize = make_float2(1, 1);
+				coinMatrix = float16_multiply(fovMatrix, coinMatrix); 
 
-			pushTexture(renderer, editorState->coinTexture.handle, make_float3(0, 0, 0), coinSize, make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
-			
-			//NOTE: Player collision
+				pushMatrix(renderer, coinMatrix);
 
-			r = make_rect2f_center_dim(coinPos.xy, scale_float2(0.7f, coinSize));
+				float2 coinSize = make_float2(1, 1);
 
-			minowskiPlus = rect2f_minowski_plus(r, make_rect2f_center_dim(editorState->player.pos.xy, playerSize), coinPos.xy);
-			if(in_rect2f_bounds(minowskiPlus, editorState->player.pos.xy)) {
-				editorState->points += 10;
-				//NOTE: Make coin dissapear
-				editorState->coinsGot[i] = true;
+				pushTexture(renderer, editorState->coinTexture.handle, make_float3(0, 0, 0), coinSize, make_float4(1, 1, 1, 1), make_float4(0, 0, 1, 1));
+				
+				//NOTE: Player collision
+
+				r = make_rect2f_center_dim(coinPos.xy, scale_float2(0.7f, coinSize));
+
+				minowskiPlus = rect2f_minowski_plus(r, make_rect2f_center_dim(editorState->player.pos.xy, playerSize), coinPos.xy);
+				if(in_rect2f_bounds(minowskiPlus, editorState->player.pos.xy)) {
+					editorState->points += 10;
+					//NOTE: Make coin dissapear
+					int val = i;
+					editorState->coinsGot = pushArrayItem(editorState->coinsGot, val, int);
+				}
 			}
 		}
 
