@@ -69,6 +69,8 @@ typedef struct {
 
 	Font font;
 
+	float shakeTimer;
+
 	float fontScale;
 
 	bool draw_debug_memory_stats;
@@ -191,6 +193,8 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		editorState->draw_debug_memory_stats = false;
 		editorState->hasInteratedYet = false;
 
+		editorState->shakeTimer = -1;//NOTE: Turn the timer off
+
 		srand(time(NULL));   // Initialization, should only be called once.
 		
 		editorState->player.velocity = make_float2(0, 0);
@@ -229,8 +233,6 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 		editorState->draw_debug_memory_stats = !editorState->draw_debug_memory_stats;
 	}
 
-	
-
 	Renderer *renderer = &editorState->renderer;
 
 	//NOTE: Clear the renderer out so we can start again
@@ -246,6 +248,22 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 	float fauxDimensionY = 1000;
 	float fauxDimensionX = fauxDimensionY * (windowWidth/windowHeight);
+
+	float2 cameraOffset = make_float2(0, 0);
+
+	if(editorState->shakeTimer >= 0) {
+
+		float offset = perlin1d(editorState->shakeTimer, 40, 3)*(1.0f - editorState->shakeTimer);
+		//NOTE: Update the camera position offset
+		cameraOffset.x = offset;
+		cameraOffset.y = offset;
+
+		editorState->shakeTimer += dt;
+
+		if(editorState->shakeTimer >= 1.0f) {
+			editorState->shakeTimer = -1.0f;
+		}
+	}
 
 
 	float16 orthoMatrix = make_ortho_matrix_origin_center(fauxDimensionX, fauxDimensionY, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE);
@@ -276,7 +294,8 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 
 	editorState->player.rotation = lerp(editorState->player.rotation, editorState->player.targetRotation, rotationPower*0.05f); 
 
-	editorState->player.cameraPos.x = editorState->player.pos.x;
+	editorState->player.cameraPos.x = editorState->player.pos.x + cameraOffset.x;
+	editorState->player.cameraPos.y = cameraOffset.y;
 
 	pushShader(renderer, &textureShader);
 
@@ -319,6 +338,12 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 			// editorState->player.pos.y = 0;
 			// editorState->player.velocity.y = 0;
 			//NOTE: Reset player
+
+			//NOTE: Shake the camera
+			if(editorState->shakeTimer < 0 || editorState->shakeTimer > 0.5f) {
+				editorState->shakeTimer = 0;
+			}
+			
 		}
 
 		////////////
@@ -341,6 +366,10 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 			// editorState->player.pos.y = 0;
 			// editorState->player.velocity.y = 0;
 			//NOTE: Reset player
+
+			if(editorState->shakeTimer < 0 || editorState->shakeTimer > 0.5f) {
+				editorState->shakeTimer = 0;
+			}
 		}
 
 		{
@@ -405,7 +434,6 @@ static EditorState *updateEditor(BackendRenderer *backendRenderer, float dt, flo
 	Texture *t = easyAnimation_updateAnimation_getTexture(&editorState->playerAnimationController, &editorState->animationItemFreeListPtr, dt);
 	
 	pushTexture(renderer, t->handle, make_float3(0, 0, 0), playerSize, make_float4(1, 1, 1, 1), t->uvCoords);
-
 
 
 	//NOTE: Draw the points

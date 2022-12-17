@@ -181,7 +181,6 @@ static Rect2f rect2f_minowski_plus(Rect2f a, Rect2f b, float2 center) {
 	return result;
 }	
 
-
 struct float16
 {
 	union {
